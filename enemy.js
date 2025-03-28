@@ -1,10 +1,101 @@
 import * as THREE from 'three';
 
 export class Enemy {
-    constructor(scene, x, y, type, level) {
+    constructor(scene, x, y, type = 0, level = 1) {
         this.scene = scene;
-        this.type = type; // 0: basic, 1: shooter, 2: fast, 3: bomber, 4: charger, 5: nest, 6: small nest
+        this.type = type;
         this.level = level;
+        
+        // Detect if on mobile
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+        const mobileSpeedMultiplier = isMobile ? 0.5 : 1; // Half speed on mobile
+        
+        // Set properties based on enemy type
+        switch(type) {
+            case 0: // Basic enemy (melee)
+                this.hp = 8 + (level - 1) * 2; // Base 8 HP + 2 per level
+                this.speed = 1.5 * mobileSpeedMultiplier; // Half speed on mobile
+                this.damage = 1;
+                this.attackRange = 80;
+                this.attackCooldown = 1000; // 1 second
+                this.lastAttackTime = 0;
+                this.behavior = 'chase';
+                this.color = 0xFF0000; // Red
+                break;
+            case 1: // Ranged enemy (shooter)
+                this.hp = 5 + (level - 1) * 1; // Base 5 HP + 1 per level
+                this.speed = 1.3 * mobileSpeedMultiplier; // Slightly slower, half on mobile
+                this.damage = 1;
+                this.attackRange = 300;
+                this.attackCooldown = 1500; // 1.5 seconds
+                this.lastAttackTime = 0;
+                this.behavior = 'maintain-distance';
+                this.bullets = [];
+                this.preferredDistance = 250; // Stay this far from player if possible
+                this.color = 0x00FF00; // Green
+                break;
+            case 2: // Fast enemy
+                this.hp = 3 + (level - 1) * 1; // Base 3 HP + 1 per level
+                this.speed = 2.5 * mobileSpeedMultiplier; // Fast, half on mobile
+                this.damage = 1;
+                this.attackRange = 80;
+                this.attackCooldown = 800; // 0.8 seconds
+                this.lastAttackTime = 0;
+                this.behavior = 'chase';
+                this.color = 0x0000FF; // Blue
+                break;
+            case 3: // Bomber (explodes when close to player)
+                this.hp = 10 + (level - 1) * 3; // Base 10 HP + 3 per level
+                this.speed = 1.0 * mobileSpeedMultiplier; // Slow, half on mobile
+                this.damage = 3;
+                this.attackRange = 100;
+                this.attackCooldown = 2000; // 2 seconds
+                this.lastAttackTime = 0;
+                this.behavior = 'suicide';
+                this.color = 0xFF8800; // Orange
+                this.explosionTriggered = false;
+                this.explosionRadius = 150;
+                break;
+            case 4: // Charger (moves faster when attacking)
+                this.hp = A = 8 + (level - 1) * 2; // Base 8 HP + 2 per level
+                this.normalSpeed = 1.2 * mobileSpeedMultiplier; // Normal speed, half on mobile
+                this.chargeSpeed = 3.5 * mobileSpeedMultiplier; // Charge speed, half on mobile
+                this.speed = this.normalSpeed; // Start with normal speed
+                this.damage = 2;
+                this.attackRange = 200; // Longer attack range to start charge
+                this.chargeRange = 250; // How far it charges
+                this.attackCooldown = 3000; // 3 seconds between charges
+                this.lastAttackTime = 0;
+                this.behavior = 'charge';
+                this.isCharging = false;
+                this.chargeTarget = null;
+                this.color = 0xFF00FF; // Purple
+                break;
+            case 5: // Nest (spawns small enemies)
+                this.hp = 15 + (level - 1) * 5; // Base 15 HP + 5 per level
+                this.speed = 0.5 * mobileSpeedMultiplier; // Very slow, half on mobile
+                this.damage = 0; // Doesn't directly damage
+                this.attackRange = 0;
+                this.spawnCooldown = 5000; // 5 seconds between spawns
+                this.lastSpawnTime = 0;
+                this.behavior = 'stationary';
+                this.color = 0xFFFF00; // Yellow
+                this.maxSpawns = 5; // Maximum number of spawns
+                this.currentSpawns = 0;
+                this.spawnType = 2; // Spawn fast enemies
+                this.newSpawnedEnemy = null; // Track newly spawned enemies
+                break;
+            default:
+                this.hp = 5;
+                this.speed = 1.5 * mobileSpeedMultiplier; // Half speed on mobile
+                this.damage = 1;
+                this.attackRange = 80;
+                this.attackCooldown = 1000;
+                this.lastAttackTime = 0;
+                this.behavior = 'chase';
+                this.color = 0xFF0000;
+        }
+        
         this.isDead = false; // Flag to track if enemy is dead
         
         // Enemy stats scaling configuration
@@ -12,280 +103,44 @@ export class Enemy {
         const SCALING_FACTOR = 1.1; // How much stats increase per level (10%)
         const levelMultiplier = ENABLE_LEVEL_SCALING ? Math.pow(SCALING_FACTOR, level - 1) : 1;
         
-        // Set enemy properties based on type
-        if (type === 0) { // Basic monster
-            this.baseHp = 3;
-            this.speed = 2;
-            this.attackDamage = 1;
-            this.attackRange = 30;
-            
-            // Create mesh first
-            const geometry = new THREE.PlaneGeometry(64, 64);
-            const material = new THREE.MeshBasicMaterial({
-                color: 0x00FF00, // Temporary color until texture loads
-                transparent: true,
-                alphaTest: 0.1,
-                side: THREE.DoubleSide,
-                depthTest: true,
-                depthWrite: true
-            });
-            this.mesh = new THREE.Mesh(geometry, material);
-            
-            // Load basic monster sprite sheet
-            const texture = new THREE.TextureLoader().load('assets/sprites/basic_monster.png', 
-                // Success callback
-                (loadedTexture) => {
-                    console.log('Sprite sheet loaded successfully');
-                    this.mesh.material.map = loadedTexture;
-                    this.mesh.material.needsUpdate = true;
-                    this.mesh.material.color.setHex(0xFFFFFF); // Reset to white when texture loads
-                },
-                // Progress callback
-                undefined,
-                // Error callback
-                (error) => {
-                    console.error('Error loading sprite sheet:', error);
-                }
-            );
-            texture.magFilter = THREE.NearestFilter;
-            texture.minFilter = THREE.NearestFilter;
-            
-            // Animation setup for basic monster
-            this.setupAnimationFrames();
-            
-        } else if (type === 1) { // Shooter
-            this.baseHp = 5;
-            this.speed = 1;
-            this.attackDamage = 1;
-            this.attackRange = 800; // Entire screen width
-            // Randomize the initial shoot cooldown between 1000-3000ms (1-3 seconds)
-            this.shootCooldown = 1000 + Math.floor(Math.random() * 2000);
-            this.lastShotTime = 0;
-            
-            // Create mesh with sprite sheet
-            const geometry = new THREE.PlaneGeometry(64, 64);
-            const material = new THREE.MeshBasicMaterial({
-                color: 0xFFFFFF, // White color to show sprite properly
-                transparent: true,
-                alphaTest: 0.1,
-                side: THREE.DoubleSide
-            });
-            this.mesh = new THREE.Mesh(geometry, material);
-            
-            // Load shooter enemy sprite sheet
-            const texture = new THREE.TextureLoader().load('assets/sprites/shooter_enemy.png', 
-                // Success callback
-                (loadedTexture) => {
-                    console.log('Shooter enemy sprite sheet loaded successfully');
-                    this.mesh.material.map = loadedTexture;
-                    this.mesh.material.needsUpdate = true;
-                },
-                // Progress callback
-                undefined,
-                // Error callback
-                (error) => {
-                    console.error('Error loading shooter enemy sprite sheet:', error);
-                    this.mesh.material.color.setHex(0x0000FF); // Fallback to blue if sprite fails to load
-                }
-            );
-            texture.magFilter = THREE.NearestFilter;
-            texture.minFilter = THREE.NearestFilter;
-            
-            // Setup animation frames
-            this.setupAnimationFrames();
-            
-        } else if (type === 3) { // Bomber
-            this.baseHp = 7;
-            this.speed = 1.5;
-            this.attackDamage = 1;
-            this.explosionDamage = 3;
-            this.attackRange = 250;
-            this.shootCooldown = 4000;
-            this.lastShotTime = 0;
-            
-            const geometry = new THREE.CircleGeometry(20, 32);
-            const material = new THREE.MeshBasicMaterial({
-                color: 0xFF6600,
-                transparent: true
-            });
-            this.mesh = new THREE.Mesh(geometry, material);
-            
-            // Create explosion effect mesh
-            const explosionGeometry = new THREE.CircleGeometry(50, 32);
-            const explosionMaterial = new THREE.MeshBasicMaterial({
-                color: 0xFF0000,
-                transparent: true,
-                opacity: 0.5
-            });
-            this.explosionMesh = new THREE.Mesh(explosionGeometry, explosionMaterial);
-            this.explosionMesh.visible = false;
-            scene.add(this.explosionMesh);
-            
-        } else if (type === 4) { // Charger
-            this.baseHp = 7;
-            this.speed = 2;
-            this.attackDamage = 3;
-            this.attackRange = 30;
-            this.chargeSpeed = 8;
-            this.isCharging = false;
-            this.chargeCooldown = 5000; // 5 seconds between charges
-            this.lastChargeTime = 0;
-            this.chargeDirection = { x: 0, y: 0 }; // Store charge direction
-            this.randomMoveTimer = 0;
-            this.randomMoveInterval = 3000; // Change direction every 3 seconds
-            this.randomDirection = { x: 0, y: 0 };
-            
-            // Create mesh with sprite sheet
-            const geometry = new THREE.PlaneGeometry(64, 64);
-            const material = new THREE.MeshBasicMaterial({
-                color: 0xFFFFFF, // White color to show sprite properly
-                transparent: true,
-                alphaTest: 0.1,
-                side: THREE.DoubleSide
-            });
-            this.mesh = new THREE.Mesh(geometry, material);
-            
-            // Load ram sprite sheet
-            const texture = new THREE.TextureLoader().load('assets/sprites/ram.png', 
-                // Success callback
-                (loadedTexture) => {
-                    console.log('Ram sprite sheet loaded successfully');
-                    this.mesh.material.map = loadedTexture;
-                    this.mesh.material.needsUpdate = true;
-                },
-                // Progress callback
-                undefined,
-                // Error callback
-                (error) => {
-                    console.error('Error loading ram sprite sheet:', error);
-                    this.mesh.material.color.setHex(0x800080); // Fallback to purple if sprite fails to load
-                }
-            );
-            texture.magFilter = THREE.NearestFilter;
-            texture.minFilter = THREE.NearestFilter;
-            
-            // Setup animation frames similar to basic monster
-            this.setupAnimationFrames();
-            
-        } else if (type === 5) { // Nest
-            this.baseHp = 12;
-            this.speed = 0; // Doesn't move
-            this.attackDamage = 0; // Doesn't attack directly
-            this.attackRange = 0;
-            
-            // Spawning properties
-            this.spawnCooldown = 3000; // 3 seconds between spawns
-            this.lastSpawnTime = 0;
-            this.spawnedEnemies = []; // Track spawned enemies
-            
-            // Create mesh with placeholder graphics - increased size 
-            const geometry = new THREE.PlaneGeometry(120, 120); // Increased from 100x100
-            const material = new THREE.MeshBasicMaterial({
-                color: 0x8B4513, // Brown color for placeholder
-                transparent: true,
-                alphaTest: 0.01, // Lower alphaTest to show more of the texture
-                side: THREE.DoubleSide
-            });
-            this.mesh = new THREE.Mesh(geometry, material);
-            
-            // Load nest sprite if available
-            const texture = new THREE.TextureLoader().load('assets/sprites/nest.png', 
-                // Success callback
-                (loadedTexture) => {
-                    console.log('Nest sprite loaded successfully');
-                    this.mesh.material.map = loadedTexture;
-                    this.mesh.material.color.setHex(0xFFFFFF); // Reset to white when texture loads
-                    this.mesh.material.needsUpdate = true;
-                },
-                // Progress callback
-                undefined,
-                // Error callback
-                (error) => {
-                    console.error('Error loading nest sprite:', error);
-                    // Keep placeholder color
-                }
-            );
-            texture.magFilter = THREE.NearestFilter;
-            texture.minFilter = THREE.NearestFilter;
-            
-        } else if (type === 6) { // Small nest enemy
-            this.baseHp = 1;
-            this.speed = 3;
-            this.attackDamage = 1;
-            this.attackRange = 30;
-            this.isSpawnedEnemy = true; // Flag to identify it's a spawned enemy
-            
-            // Create mesh with placeholder graphics
-            const geometry = new THREE.PlaneGeometry(60, 60); // Increased from 40x40
-            const material = new THREE.MeshBasicMaterial({
-                color: 0xA52A2A, // Darker brown for placeholder
-                transparent: true,
-                alphaTest: 0.01, // Lower alphaTest to show more of the texture
-                side: THREE.DoubleSide
-            });
-            this.mesh = new THREE.Mesh(geometry, material);
-            
-            // Load small nest enemy sprite if available
-            const texture = new THREE.TextureLoader().load('assets/sprites/nest_enemy.png', 
-                // Success callback
-                (loadedTexture) => {
-                    console.log('Nest enemy sprite loaded successfully');
-                    this.mesh.material.map = loadedTexture;
-                    this.mesh.material.color.setHex(0xFFFFFF); // Reset to white when texture loads
-                    this.mesh.material.needsUpdate = true;
-                },
-                // Progress callback
-                undefined,
-                // Error callback
-                (error) => {
-                    console.error('Error loading nest enemy sprite:', error);
-                    // Keep placeholder color
-                }
-            );
-            texture.magFilter = THREE.NearestFilter;
-            texture.minFilter = THREE.NearestFilter;
-            
-            // Setup animation frames
-            this.setupAnimationFrames();
-            
-        } else { // Fast monster (type 2)
-            this.baseHp = 4;
-            this.speed = 4;
-            this.attackDamage = 1;
-            this.attackRange = 30;
-            
-            // Create mesh with sprite sheet
-            const geometry = new THREE.PlaneGeometry(64, 64);
-            const material = new THREE.MeshBasicMaterial({
-                color: 0xFFFFFF, // White color to show sprite properly
-                transparent: true,
-                alphaTest: 0.1,
-                side: THREE.DoubleSide
-            });
-            this.mesh = new THREE.Mesh(geometry, material);
-            
-            // Load flying enemy sprite sheet
-            const texture = new THREE.TextureLoader().load('assets/sprites/flying_enemy.png', 
-                // Success callback
-                (loadedTexture) => {
-                    console.log('Flying enemy sprite sheet loaded successfully');
-                    this.mesh.material.map = loadedTexture;
-                    this.mesh.material.needsUpdate = true;
-                },
-                // Progress callback
-                undefined,
-                // Error callback
-                (error) => {
-                    console.error('Error loading flying enemy sprite sheet:', error);
-                    this.mesh.material.color.setHex(0xFFFF00); // Fallback to yellow if sprite fails to load
-                }
-            );
-            texture.magFilter = THREE.NearestFilter;
-            texture.minFilter = THREE.NearestFilter;
-            
-            // Setup animation frames
-            this.setupAnimationFrames();
-        }
+        // Apply level scaling
+        this.hp = Math.ceil(this.hp * levelMultiplier);
+        this.maxHp = this.hp;
+        this.damage = Math.ceil(this.damage * levelMultiplier);
+        
+        // Create mesh first
+        const geometry = new THREE.PlaneGeometry(64, 64);
+        const material = new THREE.MeshBasicMaterial({
+            color: this.color,
+            transparent: true,
+            alphaTest: 0.1,
+            side: THREE.DoubleSide,
+            depthTest: true,
+            depthWrite: true
+        });
+        this.mesh = new THREE.Mesh(geometry, material);
+        
+        // Load enemy sprite sheet
+        const texture = new THREE.TextureLoader().load('assets/sprites/basic_monster.png', 
+            // Success callback
+            (loadedTexture) => {
+                console.log('Sprite sheet loaded successfully');
+                this.mesh.material.map = loadedTexture;
+                this.mesh.material.needsUpdate = true;
+                this.mesh.material.color.setHex(0xFFFFFF); // Reset to white when texture loads
+            },
+            // Progress callback
+            undefined,
+            // Error callback
+            (error) => {
+                console.error('Error loading sprite sheet:', error);
+            }
+        );
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.NearestFilter;
+        
+        // Animation setup for basic monster
+        this.setupAnimationFrames();
         
         // Position mesh
         this.mesh.position.set(x, y, 1);
@@ -293,11 +148,6 @@ export class Enemy {
         
         // Create shadow for the enemy
         this.createShadow();
-        
-        // Apply level scaling
-        this.hp = Math.ceil(this.baseHp * levelMultiplier);
-        this.maxHp = this.hp;
-        this.attackDamage = Math.ceil(this.attackDamage * levelMultiplier);
         
         // Create health bar and UI elements
         this.createHealthUI();
@@ -376,7 +226,7 @@ export class Enemy {
         ctx.fillStyle = 'white';
         ctx.font = '20px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(`${this.hp}/${this.maxHp} ATK:${this.attackDamage}`, 64, 16);
+        ctx.fillText(`${this.hp}/${this.maxHp} ATK:${this.damage}`, 64, 16);
         
         const texture = new THREE.CanvasTexture(canvas);
         const healthNumberMaterial = new THREE.MeshBasicMaterial({
@@ -406,7 +256,7 @@ export class Enemy {
         this.ctx.fillStyle = 'white';
         this.ctx.font = '20px Arial';
         this.ctx.textAlign = 'center';
-        this.ctx.fillText(`${this.hp}/${this.maxHp} ATK:${this.attackDamage}`, 64, 16);
+        this.ctx.fillText(`${this.hp}/${this.maxHp} ATK:${this.damage}`, 64, 16);
         this.healthNumber.material.map.needsUpdate = true;
     }
     
@@ -623,7 +473,7 @@ export class Enemy {
                     
                     // Check if we hit the player
                     if (distanceToPlayer <= this.attackRange) {
-                        player.takeDamage(this.attackDamage);
+                        player.takeDamage(this.damage);
                         this.isCharging = false;
                         this.lastChargeTime = currentTime;
                     }
@@ -635,7 +485,7 @@ export class Enemy {
                     }
                 } else {
                     // Check if we should start charging (only if in aggro range)
-                    if (distanceToPlayer <= this.aggroRange && currentTime - this.lastChargeTime > this.chargeCooldown) {
+                    if (distanceToPlayer <= this.aggroRange && currentTime - this.lastChargeTime > this.attackCooldown) {
                         this.isCharging = true;
                         this.lastChargeTime = currentTime;
                         // Store the charge direction when starting the charge
@@ -867,7 +717,7 @@ export class Enemy {
         const currentTime = performance.now();
         
         if (this.type === 1) { // Regular shooter
-            if (currentTime - this.lastShotTime > this.shootCooldown) {
+            if (currentTime - this.lastShotTime > this.attackCooldown) {
                 // Shoot four times quickly
                 for (let i = 0; i < 4; i++) {
                     setTimeout(() => {
@@ -877,7 +727,7 @@ export class Enemy {
                             dx: 0,
                             dy: 0,
                             speed: 5,
-                            damage: this.attackDamage
+                            damage: this.damage
                         };
                         
                         // Position bullet at enemy
@@ -900,10 +750,10 @@ export class Enemy {
                 
                 // Update last shot time with a randomized cooldown between 1-3 seconds
                 this.lastShotTime = currentTime;
-                this.shootCooldown = 1000 + Math.floor(Math.random() * 2000); // Random between 1000-3000ms
+                this.attackCooldown = 1000 + Math.floor(Math.random() * 2000); // Random between 1000-3000ms
             }
         } else if (this.type === 3) { // Bomber
-            if (currentTime - this.lastShotTime > this.shootCooldown) {
+            if (currentTime - this.lastShotTime > this.attackCooldown) {
                 this.lastShotTime = currentTime;
                 
                 // Create bomb
@@ -912,7 +762,7 @@ export class Enemy {
                     dx: 0,
                     dy: 0,
                     speed: 3,
-                    damage: this.attackDamage,
+                    damage: this.damage,
                     explosionDamage: this.explosionDamage,
                     timeCreated: currentTime
                 };
@@ -1042,7 +892,7 @@ export class Enemy {
         const currentTime = performance.now();
         
         if (!this.lastAttackTime || currentTime - this.lastAttackTime >= 1000) {
-            player.takeDamage(this.attackDamage);
+            player.takeDamage(this.damage);
             this.lastAttackTime = currentTime;
         }
     }

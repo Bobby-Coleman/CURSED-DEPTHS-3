@@ -229,12 +229,12 @@
                         // Initial update to establish targeting
                         updateAutoAim();
                         
-                        // Regular updates at higher frequency (20 times per second)
+                        // Much more frequent updates (60 times per second - approximately game framerate)
                         setInterval(() => {
                             if (window.mobileControls.autoAim) {
                                 updateAutoAim();
                             }
-                        }, 50);
+                        }, 16); // ~60fps update rate
                         
                         // Create virtual joystick
                         const joystick = nipplejs.create({
