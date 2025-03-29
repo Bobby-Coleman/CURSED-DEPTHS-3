@@ -66,6 +66,19 @@
             background-color: rgba(255, 255, 255, 0.1);
             border-radius: 50%;
         }
+        #mobileControlsRight {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            width: 120px;
+            height: 120px;
+            pointer-events: all;
+            opacity: 0.5;
+            display: none;
+            background-color: rgba(255, 0, 0, 0.1);
+            border-radius: 50%;
+        }
         #shootButton {
             position: fixed;
             bottom: 40px;
@@ -81,7 +94,7 @@
             touch-action: none;
         }
         @media (max-width: 768px) {
-            #mobileControls, #shootButton {
+            #mobileControls, #mobileControlsRight, #shootButton {
                 display: block;
             }
         }
@@ -110,9 +123,12 @@
     </script>
     <!-- Add nipple.js library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
+    <!-- Add mobile controls -->
+    <script src="mobile-controls.js"></script>
 </head>
 <body>
     <div id="mobileControls"></div>
+    <div id="mobileControlsRight"></div>
     <div id="shootButton"></div>
     <div id="game-ui">
         <div>HP: <span id="hp">4</span> / <span id="max-hp">4</span></div>
@@ -141,190 +157,6 @@
     <script src="main.js" type="module"></script>
     <script type="module">
         import { game } from './main.js';
-
-        // Global variables for mobile movement
-        window.mobileControls = {
-            moveAngle: null,
-            moveForce: 0,
-            isShooting: false,
-            aimX: 0,
-            aimY: 0,
-            autoAim: true  // Enable auto-aiming for mobile
-        };
-
-        // Function to find nearest enemy for auto-aim
-        function findNearestEnemy() {
-            try {
-                // Direct access to enemies array instead of through gameState
-                if (!window.game || !window.game.player || !window.game.enemies || window.game.enemies.length === 0) {
-                    console.log("Auto-aim: No valid game state or enemies");
-                    return null;
-                }
-                
-                const playerPos = window.game.player.mesh.position;
-                let nearestEnemy = null;
-                let minDistance = Infinity;
-                
-                // Debug log
-                console.log(`Auto-aim: Found ${window.game.enemies.length} enemies to target`);
-                
-                // Find the nearest enemy
-                for (const enemy of window.game.enemies) {
-                    if (enemy && enemy.mesh) {
-                        const distance = Math.sqrt(
-                            Math.pow(playerPos.x - enemy.mesh.position.x, 2) +
-                            Math.pow(playerPos.y - enemy.mesh.position.y, 2)
-                        );
-                        
-                        if (distance < minDistance) {
-                            minDistance = distance;
-                            nearestEnemy = enemy;
-                        }
-                    }
-                }
-                
-                if (nearestEnemy) {
-                    console.log(`Auto-aim: Targeting enemy at (${nearestEnemy.mesh.position.x}, ${nearestEnemy.mesh.position.y})`);
-                }
-                
-                return nearestEnemy;
-            } catch (e) {
-                console.error("Error in findNearestEnemy:", e);
-                return null;
-            }
-        }
-
-        // Function to update auto-aim target
-        function updateAutoAim() {
-            try {
-                const nearestEnemy = findNearestEnemy();
-                
-                if (nearestEnemy && nearestEnemy.mesh) {
-                    // Set mouse position to aim at nearest enemy
-                    if (window.game && window.game.mouse) {
-                        window.game.mouse.x = nearestEnemy.mesh.position.x;
-                        window.game.mouse.y = nearestEnemy.mesh.position.y;
-                        console.log(`Auto-aim: Set aim to (${window.game.mouse.x}, ${window.game.mouse.y})`);
-                    }
-                }
-            } catch (e) {
-                console.error("Error in updateAutoAim:", e);
-            }
-        }
-
-        // Wait for game to be completely initialized
-        window.addEventListener('load', () => {
-            // Check if we're on mobile (for styling) or desktop
-            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
-            
-            if (isMobile) {
-                console.log("Mobile device detected: setting up mobile controls");
-                
-                // Give time for the game to fully initialize
-                setTimeout(() => {
-                    try {
-                        // Set up auto-aim update loop
-                        console.log("Setting up auto-aim update loop");
-                        
-                        // Initial update to establish targeting
-                        updateAutoAim();
-                        
-                        // Much more frequent updates (60 times per second - approximately game framerate)
-                        setInterval(() => {
-                            if (window.mobileControls.autoAim) {
-                                updateAutoAim();
-                            }
-                        }, 16); // ~60fps update rate
-                        
-                        // Create virtual joystick
-                        const joystick = nipplejs.create({
-                            zone: document.getElementById('mobileControls'),
-                            mode: 'static',
-                            position: { left: '60px', bottom: '60px' },
-                            color: 'white',
-                            size: 120,
-                            multitouch: true
-                        });
-
-                        joystick.on('move', (evt, data) => {
-                            try {
-                                // Get the joystick angle in degrees
-                                const angle = data.angle.degree;
-                                
-                                // Reset all keys first
-                                window.game.keys.w = false;
-                                window.game.keys.a = false;
-                                window.game.keys.s = false;
-                                window.game.keys.d = false;
-                                
-                                // Calculate directions using simple angle ranges
-                                // UP
-                                if (angle > 45 && angle < 135) {
-                                    window.game.keys.w = true;
-                                }
-                                // DOWN
-                                if (angle > 225 && angle < 315) {
-                                    window.game.keys.s = true;
-                                }
-                                // LEFT
-                                if (angle > 135 && angle < 225) {
-                                    window.game.keys.a = true;
-                                }
-                                // RIGHT
-                                if ((angle > 315 && angle <= 360) || (angle >= 0 && angle < 45)) {
-                                    window.game.keys.d = true;
-                                }
-                                
-                                // Don't override mouse position during movement when auto-aim is enabled
-                                
-                                console.log("Keys set: ", 
-                                    window.game.keys.w ? "UP " : "", 
-                                    window.game.keys.s ? "DOWN " : "", 
-                                    window.game.keys.a ? "LEFT " : "", 
-                                    window.game.keys.d ? "RIGHT" : "");
-                            } catch (e) {
-                                console.error("Error in joystick handler:", e);
-                            }
-                        });
-
-                        joystick.on('end', () => {
-                            try {
-                                // Reset all keys
-                                window.game.keys.w = false;
-                                window.game.keys.a = false;
-                                window.game.keys.s = false;
-                                window.game.keys.d = false;
-                                console.log("All keys reset");
-                            } catch (e) {
-                                console.error("Error in joystick end handler:", e);
-                            }
-                        });
-
-                        // Set up shoot button
-                        const shootButton = document.getElementById('shootButton');
-                        
-                        shootButton.addEventListener('touchstart', (e) => {
-                            e.preventDefault();
-                            if (window.game && window.game.mouse) {
-                                window.game.mouse.isDown = true;
-                                console.log("Shoot button pressed");
-                            }
-                        });
-
-                        shootButton.addEventListener('touchend', (e) => {
-                            e.preventDefault();
-                            if (window.game && window.game.mouse) {
-                                window.game.mouse.isDown = false;
-                            }
-                        });
-                        
-                        console.log("Mobile controls initialized with direct key mapping");
-                    } catch (e) {
-                        console.error("Error setting up mobile controls:", e);
-                    }
-                }, 1500); // Give more time for initialization
-            }
-        });
     </script>
 </body>
 </html>
