@@ -3,18 +3,22 @@ import * as THREE from 'three';
 export class Enemy {
     constructor(scene, x, y, type = 0, level = 1) {
         this.scene = scene;
-        this.type = type;
+        this.type = type; // Store the original type
         this.level = level;
+        
+        console.log(`Enemy constructor called with type=${type}, level=${level}`);
         
         // Detect if on mobile
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
-        const mobileSpeedMultiplier = isMobile ? 0.5 : 1; // Half speed on mobile
+        const mobileSpeedMultiplier = isMobile ? 0.75 : 1; // 1.33x slower on mobile (0.75 = 3/4)
+        
+        console.log(`Mobile detected: ${isMobile}, using speed multiplier: ${mobileSpeedMultiplier}`);
         
         // Set properties based on enemy type
         switch(type) {
             case 0: // Basic enemy (melee)
                 this.hp = 8 + (level - 1) * 2; // Base 8 HP + 2 per level
-                this.speed = 1.5 * mobileSpeedMultiplier; // Half speed on mobile
+                this.speed = 1.5 * mobileSpeedMultiplier; // 1.33x slower on mobile
                 this.damage = 1;
                 this.attackRange = 80;
                 this.attackCooldown = 1000; // 1 second
@@ -24,11 +28,12 @@ export class Enemy {
                 break;
             case 1: // Ranged enemy (shooter)
                 this.hp = 5 + (level - 1) * 1; // Base 5 HP + 1 per level
-                this.speed = 1.3 * mobileSpeedMultiplier; // Slightly slower, half on mobile
+                this.speed = 1.3 * mobileSpeedMultiplier; // Slightly slower, 1.33x slower on mobile
                 this.damage = 1;
                 this.attackRange = 300;
                 this.attackCooldown = 1500; // 1.5 seconds
                 this.lastAttackTime = 0;
+                this.lastShotTime = 0; // Initialize lastShotTime for shooter
                 this.behavior = 'maintain-distance';
                 this.bullets = [];
                 this.preferredDistance = 250; // Stay this far from player if possible
@@ -36,7 +41,7 @@ export class Enemy {
                 break;
             case 2: // Fast enemy
                 this.hp = 3 + (level - 1) * 1; // Base 3 HP + 1 per level
-                this.speed = 2.5 * mobileSpeedMultiplier; // Fast, half on mobile
+                this.speed = 2.5 * mobileSpeedMultiplier; // Fast, 1.33x slower on mobile
                 this.damage = 1;
                 this.attackRange = 80;
                 this.attackCooldown = 800; // 0.8 seconds
@@ -46,26 +51,40 @@ export class Enemy {
                 break;
             case 3: // Bomber (explodes when close to player)
                 this.hp = 10 + (level - 1) * 3; // Base 10 HP + 3 per level
-                this.speed = 1.0 * mobileSpeedMultiplier; // Slow, half on mobile
+                this.speed = 1.0 * mobileSpeedMultiplier; // Slow, 1.33x slower on mobile
                 this.damage = 3;
                 this.attackRange = 100;
                 this.attackCooldown = 2000; // 2 seconds
                 this.lastAttackTime = 0;
+                this.lastShotTime = 0; // Initialize lastShotTime for bomber
                 this.behavior = 'suicide';
                 this.color = 0xFF8800; // Orange
                 this.explosionTriggered = false;
                 this.explosionRadius = 150;
+                
+                // Create explosion mesh for bomber
+                const explosionGeometry = new THREE.CircleGeometry(50, 16);
+                const explosionMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0xFF0000,
+                    transparent: true,
+                    opacity: 0.7
+                });
+                this.explosionMesh = new THREE.Mesh(explosionGeometry, explosionMaterial);
+                this.explosionMesh.visible = false;
+                scene.add(this.explosionMesh);
+                this.explosionDamage = 3;
                 break;
             case 4: // Charger (moves faster when attacking)
-                this.hp = A = 8 + (level - 1) * 2; // Base 8 HP + 2 per level
-                this.normalSpeed = 1.2 * mobileSpeedMultiplier; // Normal speed, half on mobile
-                this.chargeSpeed = 3.5 * mobileSpeedMultiplier; // Charge speed, half on mobile
+                this.hp = 8 + (level - 1) * 2; // Base 8 HP + 2 per level
+                this.normalSpeed = 1.2 * mobileSpeedMultiplier; // Normal speed, 1.33x slower on mobile
+                this.chargeSpeed = 3.5 * mobileSpeedMultiplier; // Charge speed, 1.33x slower on mobile
                 this.speed = this.normalSpeed; // Start with normal speed
                 this.damage = 2;
                 this.attackRange = 200; // Longer attack range to start charge
                 this.chargeRange = 250; // How far it charges
                 this.attackCooldown = 3000; // 3 seconds between charges
                 this.lastAttackTime = 0;
+                this.lastChargeTime = 0; // Initialize lastChargeTime
                 this.behavior = 'charge';
                 this.isCharging = false;
                 this.chargeTarget = null;
@@ -73,7 +92,7 @@ export class Enemy {
                 break;
             case 5: // Nest (spawns small enemies)
                 this.hp = 15 + (level - 1) * 5; // Base 15 HP + 5 per level
-                this.speed = 0.5 * mobileSpeedMultiplier; // Very slow, half on mobile
+                this.speed = 0.5 * mobileSpeedMultiplier; // Very slow, 1.33x slower on mobile
                 this.damage = 0; // Doesn't directly damage
                 this.attackRange = 0;
                 this.spawnCooldown = 5000; // 5 seconds between spawns
@@ -84,10 +103,11 @@ export class Enemy {
                 this.currentSpawns = 0;
                 this.spawnType = 2; // Spawn fast enemies
                 this.newSpawnedEnemy = null; // Track newly spawned enemies
+                this.spawnedEnemies = []; // Initialize spawnedEnemies array
                 break;
             default:
                 this.hp = 5;
-                this.speed = 1.5 * mobileSpeedMultiplier; // Half speed on mobile
+                this.speed = 1.5 * mobileSpeedMultiplier; // 1.33x slower on mobile
                 this.damage = 1;
                 this.attackRange = 80;
                 this.attackCooldown = 1000;
@@ -120,11 +140,35 @@ export class Enemy {
         });
         this.mesh = new THREE.Mesh(geometry, material);
         
-        // Load enemy sprite sheet
-        const texture = new THREE.TextureLoader().load('assets/sprites/basic_monster.png', 
+        // Load enemy sprite sheet based on type
+        let texturePath = 'assets/sprites/basic_monster.png'; // Default
+        
+        // Set texture path based on enemy type
+        switch(this.type) {
+            case 1: // Shooter
+                texturePath = 'assets/sprites/shooter_enemy.png';
+                break;
+            case 2: // Fast
+                texturePath = 'assets/sprites/flying_enemy.png';
+                break;
+            case 4: // Charger
+                texturePath = 'assets/sprites/ram.png';
+                break;
+            case 5: // Nest
+                texturePath = 'assets/sprites/nest.png';
+                break;
+            case 6: // Small nest enemy
+                texturePath = 'assets/sprites/nest_enemy.png';
+                break;
+            // Default (types 0 and 3) use basic_monster.png
+        }
+        
+        console.log(`Loading texture for enemy type ${this.type}: ${texturePath}`);
+        
+        const texture = new THREE.TextureLoader().load(texturePath, 
             // Success callback
             (loadedTexture) => {
-                console.log('Sprite sheet loaded successfully');
+                console.log(`Texture loaded successfully for enemy type ${this.type}`);
                 this.mesh.material.map = loadedTexture;
                 this.mesh.material.needsUpdate = true;
                 this.mesh.material.color.setHex(0xFFFFFF); // Reset to white when texture loads
@@ -133,7 +177,7 @@ export class Enemy {
             undefined,
             // Error callback
             (error) => {
-                console.error('Error loading sprite sheet:', error);
+                console.error(`Error loading texture for enemy type ${this.type}:`, error);
             }
         );
         texture.magFilter = THREE.NearestFilter;
@@ -716,6 +760,10 @@ export class Enemy {
     shoot(player) {
         const currentTime = performance.now();
         
+        // Detect if on mobile for bullet speeds
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+        const mobileBulletSpeedMultiplier = isMobile ? 0.75 : 1; // 1.33x slower bullets on mobile
+        
         if (this.type === 1) { // Regular shooter
             if (currentTime - this.lastShotTime > this.attackCooldown) {
                 // Shoot four times quickly
@@ -726,7 +774,7 @@ export class Enemy {
                             mesh: new THREE.Mesh(this.bulletGeometry, this.bulletMaterial),
                             dx: 0,
                             dy: 0,
-                            speed: 5,
+                            speed: 5 * mobileBulletSpeedMultiplier, // 1.33x slower on mobile
                             damage: this.damage
                         };
                         
@@ -761,7 +809,7 @@ export class Enemy {
                     mesh: new THREE.Mesh(this.bulletGeometry, this.bulletMaterial),
                     dx: 0,
                     dy: 0,
-                    speed: 3,
+                    speed: 3 * mobileBulletSpeedMultiplier, // 1.33x slower on mobile
                     damage: this.damage,
                     explosionDamage: this.explosionDamage,
                     timeCreated: currentTime
@@ -928,62 +976,44 @@ export class Enemy {
         
         this.scene.add(this.shadow);
         
-        // If this enemy type uses a texture, load it for the shadow
-        if (this.type === 0) {
-            new THREE.TextureLoader().load('assets/sprites/basic_monster.png', 
-                (texture) => {
-                    texture.magFilter = THREE.NearestFilter;
-                    texture.minFilter = THREE.NearestFilter;
-                    this.shadow.material.map = texture;
-                    this.shadow.material.needsUpdate = true;
-                }
-            );
-        } else if (this.type === 2) { // Fast/flying enemy
-            new THREE.TextureLoader().load('assets/sprites/flying_enemy.png', 
-                (texture) => {
-                    texture.magFilter = THREE.NearestFilter;
-                    texture.minFilter = THREE.NearestFilter;
-                    this.shadow.material.map = texture;
-                    this.shadow.material.needsUpdate = true;
-                }
-            );
-        } else if (this.type === 4) { // Charger/ram
-            new THREE.TextureLoader().load('assets/sprites/ram.png', 
-                (texture) => {
-                    texture.magFilter = THREE.NearestFilter;
-                    texture.minFilter = THREE.NearestFilter;
-                    this.shadow.material.map = texture;
-                    this.shadow.material.needsUpdate = true;
-                }
-            );
-        } else if (this.type === 5) { // Nest
-            new THREE.TextureLoader().load('assets/sprites/nest.png', 
-                (texture) => {
-                    texture.magFilter = THREE.NearestFilter;
-                    texture.minFilter = THREE.NearestFilter;
-                    this.shadow.material.map = texture;
-                    this.shadow.material.needsUpdate = true;
-                }
-            );
-        } else if (this.type === 6) { // Small nest enemy
-            new THREE.TextureLoader().load('assets/sprites/nest_enemy.png', 
-                (texture) => {
-                    texture.magFilter = THREE.NearestFilter;
-                    texture.minFilter = THREE.NearestFilter;
-                    this.shadow.material.map = texture;
-                    this.shadow.material.needsUpdate = true;
-                }
-            );
-        } else if (this.type === 1) { // Shooter enemy
-            new THREE.TextureLoader().load('assets/sprites/shooter_enemy.png', 
-                (texture) => {
-                    texture.magFilter = THREE.NearestFilter;
-                    texture.minFilter = THREE.NearestFilter;
-                    this.shadow.material.map = texture;
-                    this.shadow.material.needsUpdate = true;
-                }
-            );
+        // Use the same texture path logic as in the constructor
+        let texturePath = 'assets/sprites/basic_monster.png'; // Default
+        
+        switch(this.type) {
+            case 1: // Shooter
+                texturePath = 'assets/sprites/shooter_enemy.png';
+                break;
+            case 2: // Fast
+                texturePath = 'assets/sprites/flying_enemy.png';
+                break;
+            case 4: // Charger
+                texturePath = 'assets/sprites/ram.png';
+                break;
+            case 5: // Nest
+                texturePath = 'assets/sprites/nest.png';
+                break;
+            case 6: // Small nest enemy
+                texturePath = 'assets/sprites/nest_enemy.png';
+                break;
+            // Default (types 0 and 3) use basic_monster.png
         }
+        
+        console.log(`Loading shadow texture for enemy type ${this.type}: ${texturePath}`);
+        
+        // Load the same texture for the shadow
+        new THREE.TextureLoader().load(texturePath, 
+            (texture) => {
+                texture.magFilter = THREE.NearestFilter;
+                texture.minFilter = THREE.NearestFilter;
+                this.shadow.material.map = texture;
+                this.shadow.material.needsUpdate = true;
+                console.log(`Shadow texture loaded for enemy type ${this.type}`);
+            },
+            undefined,
+            (error) => {
+                console.error(`Error loading shadow texture for enemy type ${this.type}:`, error);
+            }
+        );
     }
 
     // Method to spawn a small enemy from the nest

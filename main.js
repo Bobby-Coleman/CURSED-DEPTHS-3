@@ -218,6 +218,8 @@ function spawnEnemies() {
         enemies.push(enemy1);
         enemies.push(enemy2);
     } else if (gameState.level === 3) { // Second battle level
+        console.log("Spawning enemies for battle level 2 (level 3)");
+        
         // Level 3 gets exactly 4 specific enemies
         const enemySetup = [
             { type: 1, name: 'shooter' },    // Type 1: Shooter
@@ -231,7 +233,7 @@ function spawnEnemies() {
         const hatchY = -ROOM_SIZE/2 + 80;
         
         // Spawn each enemy at least 350 units from the hatch
-        enemySetup.forEach(setup => {
+        enemySetup.forEach((setup, index) => {
             let x, y;
             do {
                 x = Math.random() * (ROOM_SIZE - 100) - (ROOM_SIZE / 2 - 50);
@@ -246,9 +248,13 @@ function spawnEnemies() {
                 // Keep trying until we find a position far enough from the hatch
             } while (Math.sqrt(Math.pow(x - hatchX, 2) + Math.pow(y - hatchY, 2)) < 350);
             
+            console.log(`Creating enemy ${index}: type=${setup.type} (${setup.name}) at position (${x}, ${y})`);
             const enemy = new Enemy(scene, x, y, setup.type, gameState.level);
             enemies.push(enemy);
+            console.log(`Enemy created with actual type: ${enemy.type}`);
         });
+        
+        console.log(`Total enemies spawned for level 3: ${enemies.length}`);
     } else if (gameState.level === 5) { // Third battle level
         // Spawn 7 random enemies
         const numEnemies = 7;

@@ -188,8 +188,8 @@ export class Player {
         let moveX = 0;
         let moveY = 0;
         
-        if (keys.w) moveY += this.speed;
-        if (keys.s) moveY -= this.speed;
+        if (keys.w) moveY -= this.speed;
+        if (keys.s) moveY += this.speed;
         if (keys.a) moveX -= this.speed;
         if (keys.d) moveX += this.speed;
         
@@ -380,7 +380,7 @@ export class Player {
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 
                 // Collision detected (simple circle collision)
-                if (distance < 20) {
+                if (distance < 80) {
                     // Apply damage to enemy
                     enemy.takeDamage(bullet.damage);
                     

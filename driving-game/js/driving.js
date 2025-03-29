@@ -1564,22 +1564,26 @@ class DrivingGame {
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
         // Reduced speed increase on mobile (5% instead of 10%)
         const speedIncreaseAmount = isMobile ? 1.05 : 1.1;
+        // Reduced speed decrease on mobile (5% instead of 10%)
+        const speedDecreaseAmount = isMobile ? 0.95 : 0.9;
         
-        // Apply speed effect - 85% chance to increase, 15% chance to decrease
-        if (Math.random() < 0.85) {
-            // Increase speed by 5% on mobile, 10% on desktop
+        // First 5 beers always increase speed
+        if (this.beersCollected <= 5) {
             this.settings.carSpeed *= speedIncreaseAmount;
             console.log("Speed increased: " + this.settings.carSpeed.toFixed(2));
-            
-            // Add a visual cue for speed increase
             this.createSpeedVisualEffect(true);
         } else {
-            // Decrease speed by 10%
-            this.settings.carSpeed *= 0.9;
-            console.log("Speed decreased: " + this.settings.carSpeed.toFixed(2));
-            
-            // Add a visual cue for speed decrease
-            this.createSpeedVisualEffect(false);
+            // After 5 beers, 85% chance to increase, 15% chance to decrease
+            if (Math.random() < 0.85) {
+                this.settings.carSpeed *= speedIncreaseAmount;
+                console.log("Speed increased: " + this.settings.carSpeed.toFixed(2));
+                this.createSpeedVisualEffect(true);
+            } else {
+                // Decrease speed by 10% on desktop, 5% on mobile
+                this.settings.carSpeed *= speedDecreaseAmount;
+                console.log("Speed decreased: " + this.settings.carSpeed.toFixed(2));
+                this.createSpeedVisualEffect(false);
+            }
         }
         
         // Limit the speed range to avoid extremes
